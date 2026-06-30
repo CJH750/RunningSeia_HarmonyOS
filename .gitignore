@@ -1,0 +1,22 @@
+# HarmonyOS / DevEco Studio
+.hvigor/
+build/
+node_modules/
+oh_modules/
+local.properties
+*.log
+
+# IDE
+.idea/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# HAP / APP packages
+*.hap
+*.app
+
+# Dependencies
+oh-package-lock.json5

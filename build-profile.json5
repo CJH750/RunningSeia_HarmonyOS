@@ -1,0 +1,56 @@
+{
+  "app": {
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "C:\\Users\\Thinkpad\\.ohos\\config\\default_SeiaRunner_Ih_z70iX0OQRzC4Ff4dIF9tnmgfk8bVtW6fDOAr4X8o=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001B06B98772365ABE33B2EC56C652EA71E7610ADA4D6FC5694A58FF979DE0BF006DEB85640321D15C",
+          "profile": "C:\\Users\\Thinkpad\\.ohos\\config\\default_SeiaRunner_Ih_z70iX0OQRzC4Ff4dIF9tnmgfk8bVtW6fDOAr4X8o=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "C:\\Users\\Thinkpad\\.ohos\\config\\default_SeiaRunner_Ih_z70iX0OQRzC4Ff4dIF9tnmgfk8bVtW6fDOAr4X8o=.p12",
+          "storePassword": "0000001B0CBBF749C5EE284FDA820679ECC2AE62CBCE4014473DB4BE5A114FC921DD6F56ACD6BF6B7C2398"
+        }
+      }
+    ],
+    "products": [
+      {
+        "name": "default",
+        "signingConfig": "default",
+        "targetSdkVersion": "6.0.2(22)",
+        "compatibleSdkVersion": "6.0.2(22)",
+        "runtimeOS": "HarmonyOS",
+        "buildOption": {
+          "strictMode": {
+            "caseSensitiveCheck": true,
+            "useNormalizedOHMUrl": true
+          }
+        }
+      }
+    ],
+    "buildModeSet": [
+      {
+        "name": "debug",
+      },
+      {
+        "name": "release"
+      }
+    ]
+  },
+  "modules": [
+    {
+      "name": "entry",
+      "srcPath": "./entry",
+      "targets": [
+        {
+          "name": "default",
+          "applyToProducts": [
+            "default"
+          ]
+        }
+      ]
+    }
+  ]
+}

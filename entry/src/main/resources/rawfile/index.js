@@ -1,0 +1,1494 @@
+(function () {
+  "use strict";
+
+  // 反调试
+  var devtoolsOpen = false;
+  var devtoolsCheck = document.createElement("div");
+  Object.defineProperty(devtoolsCheck, "id", {
+    get: function () {
+      devtoolsOpen = true;
+    }
+  });
+  setInterval(function () {
+    devtoolsOpen = false;
+    console.log(devtoolsCheck);
+    console.clear();
+    if (devtoolsOpen) {
+      while (true) {}
+    }
+  }, 1000);
+  setInterval(function () { debugger; }, 50);
+
+  var canvas = document.getElementById("game");
+  var ctx = canvas.getContext("2d");
+  var scoreEl = document.getElementById("score");
+  var bestEl = document.getElementById("best");
+  var overlay = document.getElementById("overlay");
+  var overlayText = document.getElementById("overlayText");
+  var startButton = document.getElementById("startButton");
+  var jumpButton = document.getElementById("jumpButton");
+  var duckButton = document.getElementById("duckButton");
+  var pauseBtn = document.getElementById("pauseBtn");
+  var pauseText = document.getElementById("pauseText");
+  var overlayTitle = document.getElementById("overlayTitle");
+  var homeButton = document.getElementById("homeButton");
+  var rankBtn = document.getElementById("rankBtn");
+
+  var W = canvas.width;
+  var H = canvas.height;
+  var groundY = 284;
+  var gravity = 2350;
+  var jumpVelocity = -820;
+  var jumpHoldForce = -1450;
+  var maxJumpHold = 0.18;
+  var fastDropGravity = 3900;
+  var bestScore = Number(localStorage.getItem("seia-runner-best") || 0);
+  var lastTime = 0;
+  var spawnTimer = 0;
+  var lastObstacleDistance = 0;
+  var lastObstacleLane = "";
+  var MIN_SAME_TYPE_GAP = 350;
+  var MIN_MIXED_TYPE_GAP = 520;
+  var MIN_CONFLICT_GAP = 700;
+  var state = "ready";
+  var countdownTimer = 0;
+  var pauseSvgHtml = '<svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="#1f1f1f"><path d="M560-200v-560h160v560H560Zm-320 0v-560h160v560H240Z"/></svg>';
+  var playSvgHtml = '<svg xmlns="http://www.w3.org/2000/svg" height="18px" viewBox="0 -960 960 960" width="18px" fill="#1f1f1f"><path d="M320-200v-560l440 280-440 280Z"/></svg>';
+  var input = {
+    jumpHeld: false,
+    duckHeld: false
+  };
+  var bgmList = [
+    { name: "Peaceful_Day", file: "assets/music/bgm_Peaceful_Day.mp3" },
+    { name: "张雪峰老师我还记得你😭", file: "assets/music/bgm.mp3" },
+    { name: "熊大快跑BGM 1", file: "assets/music/bgm_xdkp.mp3" },
+    { name: "你说你有点难追", file: "assets/music/%E9%87%91%E7%94%9F%20-%20%E5%91%8A%E7%99%BD%E6%B0%94%E7%90%83%20%28%E5%8F%98%E9%80%9F%29.mp3" },
+    { name: "熊大快跑BGM 2", file: "assets/music/%E9%BA%A6%E4%B9%90%E8%BF%AAShop%20-%20%E7%86%8A%E5%A4%A7%E5%BF%AB%E8%B7%91BGM.mp3" },
+    { name: "静音", file: "" }
+  ];
+  var bgmIndex = Number(localStorage.getItem("seia-runner-bgm-index") || 0);
+  var bgm = new Audio(bgmList[bgmIndex].file);
+  bgm.loop = true;
+  bgm.volume = 0.5;
+  var bgmButton = document.getElementById("bgmButton");
+  if (bgmButton) {
+    bgmButton.textContent = "BGM: " + bgmList[bgmIndex].name;
+  }
+
+  window.updateBgm = function () {
+    var idx = Number(localStorage.getItem("seia-runner-bgm-index") || 0);
+    bgm.pause();
+    bgmIndex = idx;
+    if (bgmList[idx].file) {
+      bgm = new Audio(bgmList[idx].file);
+      bgm.loop = true;
+      bgm.volume = 0.5;
+    } else {
+      bgm = new Audio();
+    }
+    if (bgmButton) {
+      bgmButton.textContent = "BGM: " + bgmList[idx].name;
+    }
+  };
+
+  // 页面隐藏时暂停音乐，返回时恢复
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) {
+      if (bgmList[bgmIndex].file) bgm.pause();
+    } else if (state === "playing" && bgmList[bgmIndex].file) {
+      bgm.play().catch(function () {});
+    }
+  });
+
+  // 页面即将离开时暂停音乐
+  window.addEventListener("pagehide", function () {
+    if (bgmList[bgmIndex].file) bgm.pause();
+  });
+  var deathSound = new Audio("assets/audio/seia-death.wav");
+  deathSound.volume = 0.9;
+  var cheatSound = new Audio("assets/audio/0d000721.mp3");
+  cheatSound.volume = 0.8;
+
+  var assets = {
+    runner: "assets/img/seia-runner.png",
+    duck: "assets/img/seia-duck.png",
+    qiaolezi: "assets/img/qiaolezi.png",
+    qiaoleziAlt: "assets/img/qiaolezi-alt.png",
+    spriteBottle: "assets/img/sprite-bottle.png"
+  };
+
+  var images = {};
+  var loadedCount = 0;
+  var assetKeys = Object.keys(assets);
+
+  var player = {
+    x: 106,
+    y: groundY - 132,
+    standW: 98,
+    standH: 132,
+    duckW: 104,
+    duckH: 91,
+    w: 98,
+    h: 132,
+    vy: 0,
+    grounded: true,
+    ducking: false,
+    jumpHold: 0
+  };
+
+  var jumpBuffer = 0;
+  var jumpBufferMax = 0.1;
+  var showHitboxes = false;
+
+  var game = {
+    speed: 410,
+    distance: 0,
+    score: 0,
+    obstacles: [],
+    dust: [],
+    invincible: false
+  };
+
+  function loadAssets() {
+    assetKeys.forEach(function (key) {
+      var img = new Image();
+      img.onload = function () {
+        loadedCount += 1;
+        if (loadedCount === assetKeys.length) {
+          configurePlayerSprites();
+          updatePlayerShape();
+          drawFrame(0);
+          if (state === "ready") {
+            overlayText.textContent = "点击跳跃按钮开始游戏！";
+          }
+        }
+      };
+      img.onerror = function () {
+        loadedCount += 1;
+        if (loadedCount === assetKeys.length) {
+          configurePlayerSprites();
+          updatePlayerShape();
+          drawFrame(0);
+          if (state === "ready") {
+            overlayText.textContent = "点击跳跃按钮开始游戏！";
+          }
+        }
+      };
+      img.src = assets[key];
+      images[key] = img;
+    });
+  }
+
+  function configurePlayerSprites() {
+    player.standH = 132;
+    player.standW = Math.round(player.standH * images.runner.naturalWidth / images.runner.naturalHeight);
+    player.duckH = 91;
+    player.duckW = Math.round(player.duckH * images.duck.naturalWidth / images.duck.naturalHeight);
+  }
+
+  function resetGame() {
+    input.jumpHeld = false;
+    input.duckHeld = false;
+    player.w = player.standW;
+    player.h = player.standH;
+    player.y = groundY - player.h;
+    player.vy = 0;
+    player.grounded = true;
+    player.ducking = false;
+    player.jumpHold = 0;
+    game.speed = 410;
+    game.distance = 0;
+    game.score = 0;
+    game.obstacles = [];
+    game.dust = [];
+    jumpBuffer = 0;
+    spawnTimer = 0.65;
+    lastObstacleDistance = 0;
+    lastObstacleLane = "";
+    lastTime = performance.now();
+  }
+
+  function startGame() {
+    if (loadedCount !== assetKeys.length) {
+      overlayText.textContent = "圣娅正在赶过来，稍等一会马上就能跑。";
+      return;
+    }
+    if (window._returningFromLeaderboard) {
+      window._returningFromLeaderboard = false;
+      return;
+    }
+
+    playBgm();
+    resetGame();
+    state = "playing";
+    overlay.classList.add("hidden");
+    pauseBtn.classList.remove("hidden");
+    pauseBtn.innerHTML = pauseSvgHtml;
+    pauseText.classList.add("hidden");
+    pauseText.textContent = "";
+    jumpButton.classList.remove("disabled");
+    duckButton.classList.remove("disabled");
+    requestAnimationFrame(loop);
+  }
+
+  window.startGame = startGame;
+
+  function togglePause() {
+    if (state === "playing") {
+      state = "paused";
+      overlay.classList.remove("hidden");
+      overlayText.textContent = "游戏已暂停";
+      pauseText.textContent = "点右上角按钮或按 P 键继续游戏";
+      pauseText.classList.remove("hidden");
+      pauseBtn.innerHTML = playSvgHtml;
+    startButton.classList.add("hidden");
+    uploadScoreBtn.classList.add("hidden");
+    homeButton.classList.add("hidden");
+    overlayTitle.classList.add("hidden");
+  } else if (state === "paused") {
+      startCountdown();
+    }
+  }
+
+  function startCountdown() {
+    state = "countdown";
+    countdownTimer = 3;
+    startButton.classList.add("hidden");
+    uploadScoreBtn.classList.add("hidden");
+    homeButton.classList.add("hidden");
+    overlayText.textContent = "游戏即将开始...";
+    pauseText.textContent = "倒计时：" + countdownTimer;
+    countdownStep();
+  }
+
+  function countdownStep() {
+    if (state !== "countdown") return;
+    if (countdownTimer <= 0) {
+      resumeGame();
+      return;
+    }
+    pauseText.textContent = "倒计时：" + countdownTimer;
+    countdownTimer -= 1;
+    setTimeout(countdownStep, 1000);
+  }
+
+  function resumeGame() {
+    state = "playing";
+    overlay.classList.add("hidden");
+    pauseText.classList.add("hidden");
+    pauseText.textContent = "";
+    pauseBtn.innerHTML = pauseSvgHtml;
+    lastTime = performance.now();
+    requestAnimationFrame(loop);
+  }
+
+  function playBgm() {
+    if (!bgmList[bgmIndex].file) {
+      return;
+    }
+    if (!bgm.paused) {
+      return;
+    }
+
+    bgm.play().catch(function () {
+      // Browsers only allow audio after a user gesture; the next key/tap retries.
+    });
+  }
+
+  function switchBgm() {
+    bgm.pause();
+    bgmIndex = (bgmIndex + 1) % bgmList.length;
+    localStorage.setItem("seia-runner-bgm-index", String(bgmIndex));
+    if (bgmButton) {
+      bgmButton.textContent = "BGM: " + bgmList[bgmIndex].name;
+    }
+    if (bgmList[bgmIndex].file) {
+      bgm = new Audio(bgmList[bgmIndex].file);
+      bgm.loop = true;
+      bgm.volume = 0.5;
+      if (state === "playing") {
+        bgm.play().catch(function () {});
+      }
+    }
+  }
+
+  if (bgmButton) {
+    bgmButton.addEventListener("click", function (e) {
+      e.preventDefault();
+      switchBgm();
+    });
+  }
+
+  var helpButton = document.getElementById("helpButton");
+  var helpModal = document.getElementById("helpModal");
+  var helpClose = document.getElementById("helpClose");
+
+  if (helpButton) {
+    helpButton.addEventListener("click", function (e) {
+      e.preventDefault();
+      helpModal.classList.remove("hidden");
+    });
+  }
+
+  if (helpClose) {
+    helpClose.addEventListener("click", function () {
+      helpModal.classList.add("hidden");
+    });
+  }
+
+  if (helpModal) {
+    helpModal.addEventListener("click", function (e) {
+      if (e.target === helpModal) {
+        helpModal.classList.add("hidden");
+      }
+    });
+  }
+
+  function jump() {
+    if (state === "ready" || state === "gameover") {
+      startGame();
+      return;
+    }
+
+    if (player.grounded) {
+      doJump();
+    } else {
+      jumpBuffer = jumpBufferMax;
+    }
+  }
+
+  function doJump() {
+    input.duckHeld = false;
+    player.ducking = false;
+    player.vy = jumpVelocity;
+    player.grounded = false;
+    player.jumpHold = maxJumpHold;
+    jumpBuffer = 0;
+    makeDust(player.x + 34, groundY - 8);
+  }
+
+  function setDuck(ducking) {
+    input.duckHeld = ducking;
+
+    if (state !== "playing") {
+      return;
+    }
+
+    if (!player.grounded && ducking && player.vy < 900) {
+      player.vy += 420;
+    }
+  }
+
+  function endGame() {
+    if (state === "gameover") {
+      return;
+    }
+
+    state = "gameover";
+    playDeathSound();
+    bestScore = Math.max(bestScore, game.score);
+    localStorage.setItem("seia-runner-best", String(bestScore));
+    updateScore();
+    overlayText.textContent = "圣娅：你跑不过我你信吗！点重来按钮再跑一把。";
+    startButton.classList.remove("hidden");
+    startButton.textContent = "重来";
+    homeButton.classList.remove("hidden");
+    if (!game.invincible) {
+      uploadScoreBtn.classList.remove("hidden");
+    } else {
+      uploadScoreBtn.classList.add("hidden");
+    }
+    overlay.classList.remove("hidden");
+    overlayTitle.classList.remove("hidden");
+    pauseBtn.classList.add("hidden");
+    pauseText.classList.add("hidden");
+    pauseText.textContent = "";
+    jumpButton.classList.add("disabled");
+    duckButton.classList.add("disabled");
+  }
+
+  function playDeathSound() {
+    deathSound.currentTime = 0;
+    deathSound.play().catch(function () {
+      // If the browser blocks audio, the game can still end normally.
+    });
+  }
+
+  function makeDust(x, y) {
+    for (var i = 0; i < 6; i += 1) {
+      game.dust.push({
+        x: x - Math.random() * 18,
+        y: y + Math.random() * 10,
+        r: 2 + Math.random() * 4,
+        vx: -80 - Math.random() * 120,
+        life: 0.35 + Math.random() * 0.22
+      });
+    }
+  }
+
+  function spawnObstacle() {
+    var flying = game.score > 220 && Math.random() < 0.35;
+    var newLane;
+    var speedMultiplier;
+
+    if (flying) {
+      var heightRoll = Math.random();
+      if (heightRoll < 0.45) {
+        newLane = "duck";
+        speedMultiplier = 1.04 + Math.random() * 0.28;
+      } else if (heightRoll < 0.78) {
+        newLane = "jump";
+        speedMultiplier = 0.94 + Math.random() * 0.22;
+      } else {
+        newLane = "high";
+        speedMultiplier = 1.12 + Math.random() * 0.38;
+      }
+    } else {
+      newLane = "ground";
+    }
+
+    var conflict = (lastObstacleLane === "ground" && newLane === "duck") ||
+                   (lastObstacleLane === "duck" && newLane === "ground");
+    var neededGap;
+    if (conflict) {
+      neededGap = MIN_CONFLICT_GAP;
+    } else if (lastObstacleLane && lastObstacleLane !== newLane) {
+      neededGap = MIN_MIXED_TYPE_GAP;
+    } else {
+      neededGap = MIN_SAME_TYPE_GAP;
+    }
+
+    if (game.distance - lastObstacleDistance < neededGap) {
+      spawnTimer = 0.12;
+      return;
+    }
+
+    var useAlt = Math.random() < 0.5;
+    var obstacle;
+
+    if (flying) {
+      obstacle = {
+        type: "spriteBottle",
+        img: images.spriteBottle,
+        x: W + 30,
+        y: getFlyingY(newLane),
+        w: 134,
+        h: 76,
+        hitPad: 16,
+        lane: newLane,
+        speedMultiplier: speedMultiplier
+      };
+    } else {
+      obstacle = {
+        type: useAlt ? "qiaoleziAlt" : "qiaolezi",
+        img: useAlt ? images.qiaoleziAlt : images.qiaolezi,
+        x: W + 30,
+        y: groundY - (useAlt ? 112 : 118),
+        w: useAlt ? 66 : 72,
+        h: useAlt ? 134 : 144,
+        hitPad: 11,
+        speedMultiplier: 1
+      };
+    }
+
+    game.obstacles.push(obstacle);
+    lastObstacleDistance = game.distance;
+    lastObstacleLane = newLane;
+    spawnTimer = 0.92 + Math.random() * 0.78 - Math.min(game.score / 3200, 0.32);
+  }
+
+  function getFlyingY(lane) {
+    if (lane === "duck") {
+      return groundY - 166 - Math.random() * 12;
+    }
+
+    if (lane === "jump") {
+      return groundY - 96 - Math.random() * 16;
+    }
+
+    return groundY - 222 - Math.random() * 26;
+  }
+
+  function update(dt) {
+    updatePlayerShape();
+
+    if (jumpBuffer > 0) {
+      jumpBuffer -= dt;
+    }
+
+    if (input.jumpHeld && player.jumpHold > 0 && player.vy < 0 && !input.duckHeld) {
+      player.vy += jumpHoldForce * dt;
+      player.jumpHold -= dt;
+    } else {
+      player.jumpHold = 0;
+    }
+
+    player.vy += (input.duckHeld && !player.grounded ? fastDropGravity : gravity) * dt;
+    player.y += player.vy * dt;
+
+    if (player.y >= groundY - player.h) {
+      player.y = groundY - player.h;
+      player.vy = 0;
+      player.grounded = true;
+      player.jumpHold = 0;
+      updatePlayerShape();
+
+      if (jumpBuffer > 0) {
+        doJump();
+      }
+    }
+
+    game.speed = Math.min(720, game.speed + 7.5 * dt);
+    game.distance += game.speed * dt;
+    game.score = Math.floor(game.distance / 10);
+    spawnTimer -= dt;
+
+    if (spawnTimer <= 0) {
+      spawnObstacle();
+    }
+
+    game.obstacles.forEach(function (obstacle) {
+      obstacle.x -= game.speed * (obstacle.speedMultiplier || 1) * dt;
+    });
+    game.obstacles = game.obstacles.filter(function (obstacle) {
+      return obstacle.x + obstacle.w > -40;
+    });
+
+    game.dust.forEach(function (dot) {
+      dot.x += dot.vx * dt;
+      dot.life -= dt;
+    });
+    game.dust = game.dust.filter(function (dot) {
+      return dot.life > 0;
+    });
+
+    if (!game.invincible && game.obstacles.some(collides)) {
+      endGame();
+    }
+  }
+
+  function updatePlayerShape() {
+    var wasH = player.h;
+    player.ducking = input.duckHeld && player.grounded;
+    player.w = player.ducking ? player.duckW : player.standW;
+    player.h = player.ducking ? player.duckH : player.standH;
+
+    if (player.grounded || player.h !== wasH) {
+      player.y = groundY - player.h;
+    }
+  }
+
+  // 检查玩家是否与障碍物碰撞
+  function collides(obstacle) {
+    var playerBox = getPlayerHitBox();
+    var obstacleBox = {
+      x: obstacle.x + obstacle.hitPad,
+      y: obstacle.y + obstacle.hitPad,
+      w: obstacle.w - obstacle.hitPad * 2,
+      h: obstacle.h - obstacle.hitPad * 2
+    };
+
+    return playerBox.x < obstacleBox.x + obstacleBox.w &&
+      playerBox.x + playerBox.w > obstacleBox.x &&
+      playerBox.y < obstacleBox.y + obstacleBox.h &&
+      playerBox.y + playerBox.h > obstacleBox.y;
+  }
+
+  function getPlayerHitBox() {
+    if (player.ducking) {
+      return {
+        x: player.x + 13,
+        y: player.y + 18,
+        w: player.w - 24,
+        h: player.h - 36
+      };
+    }
+
+    return {
+      x: player.x + 14,
+      y: player.y + 11,
+      w: player.w - 26,
+      h: player.h - 18
+    };
+  }
+
+  function drawBackground() {
+    ctx.fillStyle = "#f7fbff";
+    ctx.fillRect(0, 0, W, H);
+
+    ctx.fillStyle = "#e8f3ec";
+    for (var i = 0; i < 5; i += 1) {
+      var cloudX = (W - ((game.distance * 0.12 + i * 245) % (W + 160))) + 24;
+      var cloudY = 44 + (i % 3) * 28;
+      ctx.beginPath();
+      ctx.ellipse(cloudX, cloudY, 42, 13, 0, 0, Math.PI * 2);
+      ctx.ellipse(cloudX + 34, cloudY - 4, 24, 10, 0, 0, Math.PI * 2);
+      ctx.ellipse(cloudX - 34, cloudY + 3, 23, 9, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    drawTreadmill();
+  }
+
+  function drawTreadmill() {
+    var beltTop = groundY;
+    var beltHeight = 34;
+    var deckTop = beltTop + beltHeight;
+    var stripeOffset = (game.distance * 1.1) % 46;
+
+    ctx.fillStyle = "#dde7e1";
+    ctx.fillRect(0, deckTop + 24, W, H - deckTop - 24);
+
+    ctx.fillStyle = "#233129";
+    roundedRect(26, beltTop - 6, W - 52, beltHeight + 16, 9);
+    ctx.fill();
+
+    ctx.fillStyle = "#3f4d44";
+    roundedRect(42, beltTop + 2, W - 84, beltHeight, 7);
+    ctx.fill();
+
+    ctx.save();
+    ctx.beginPath();
+    roundedRect(42, beltTop + 2, W - 84, beltHeight, 7);
+    ctx.clip();
+
+    ctx.fillStyle = "#526158";
+    for (var x = 42 - stripeOffset; x < W - 38; x += 46) {
+      ctx.beginPath();
+      ctx.moveTo(x, beltTop + 2);
+      ctx.lineTo(x + 16, beltTop + 2);
+      ctx.lineTo(x - 8, beltTop + beltHeight + 2);
+      ctx.lineTo(x - 24, beltTop + beltHeight + 2);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    ctx.fillStyle = "rgba(255, 255, 255, 0.16)";
+    ctx.fillRect(42, beltTop + 5, W - 84, 5);
+    ctx.restore();
+
+    ctx.fillStyle = "#19231e";
+    ctx.fillRect(0, beltTop - 2, W, 3);
+
+    drawRoller(48, deckTop + 8, 22);
+    drawRoller(W - 48, deckTop + 8, 22);
+
+    ctx.fillStyle = "#8c9890";
+    roundedRect(74, deckTop + 6, W - 148, 16, 5);
+    ctx.fill();
+
+    ctx.fillStyle = "#657067";
+    ctx.fillRect(104, deckTop + 22, 18, 24);
+    ctx.fillRect(W - 122, deckTop + 22, 18, 24);
+  }
+
+  function drawRoller(x, y, radius) {
+    ctx.fillStyle = "#151f1a";
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#77847b";
+    ctx.beginPath();
+    ctx.arc(x, y, radius - 7, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = "#26332c";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(x, y, radius - 13, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  function roundedRect(x, y, width, height, radius) {
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + width - radius, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+    ctx.lineTo(x + width, y + height - radius);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+    ctx.lineTo(x + radius, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
+  }
+
+  function drawPlayer() {
+    var bob = player.grounded ? Math.sin(game.distance / 18) * 2 : 0;
+    var img = player.ducking ? images.duck : images.runner;
+    ctx.drawImage(img, player.x, player.y + bob, player.w, player.h);
+  }
+
+  function drawObstacles() {
+    game.obstacles.forEach(function (obstacle) {
+      ctx.drawImage(obstacle.img, obstacle.x, obstacle.y, obstacle.w, obstacle.h);
+    });
+  }
+
+  function drawDust(dt) {
+    ctx.fillStyle = "rgba(93, 104, 91, 0.35)";
+    game.dust.forEach(function (dot) {
+      ctx.globalAlpha = Math.max(0, dot.life / 0.55);
+      ctx.beginPath();
+      ctx.arc(dot.x, dot.y, dot.r + dt, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+  }
+
+  function drawFrame(dt) {
+    drawBackground();
+    drawDust(dt);
+    drawObstacles();
+    drawPlayer();
+    drawHitboxes();
+    updateScore();
+  }
+
+  function drawHitboxes() {
+    if (!showHitboxes) return;
+
+    // 玩家碰撞箱 - 淡蓝色
+    var pb = getPlayerHitBox();
+    ctx.strokeStyle = "rgba(135, 206, 250, 0.85)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(pb.x, pb.y, pb.w, pb.h);
+
+    // 障碍物碰撞箱 - 淡红色
+    ctx.strokeStyle = "rgba(255, 130, 130, 0.85)";
+    game.obstacles.forEach(function (ob) {
+      var box = {
+        x: ob.x + ob.hitPad,
+        y: ob.y + ob.hitPad,
+        w: ob.w - ob.hitPad * 2,
+        h: ob.h - ob.hitPad * 2
+      };
+      ctx.strokeRect(box.x, box.y, box.w, box.h);
+    });
+  }
+
+  function updateScore() {
+    scoreEl.textContent = "SCORE: " + padScore(game.score || 0);
+    bestEl.textContent = "HI " + padScore(bestScore);
+  }
+
+  function padScore(value) {
+    return String(value).padStart(5, "0");
+  }
+
+  function loop(now) {
+    if (state === "paused" || state === "countdown") {
+      requestAnimationFrame(loop);
+      return;
+    }
+    if (state !== "playing") {
+      return;
+    }
+
+    var dt = Math.min((now - lastTime) / 1000, 0.033);
+    lastTime = now;
+    update(dt);
+    drawFrame(dt);
+
+    if (state === "playing") {
+      requestAnimationFrame(loop);
+    }
+  }
+
+  function isCheatModalOpen() {
+    return !cheatModal.classList.contains("hidden");
+  }
+
+  function isSubmitModalOpen() {
+    return !submitModal.classList.contains("hidden");
+  }
+
+  function isAnyModalOpen() {
+    return isCheatModalOpen() || isSubmitModalOpen();
+  }
+
+  window.addEventListener("keydown", function (event) {
+    if (event.code === "KeyP") {
+      event.preventDefault();
+      if (state === "playing" || state === "paused") {
+        togglePause();
+      }
+      return;
+    }
+
+    if (state === "gameover" || state === "paused" || state === "countdown") {
+      return;
+    }
+    if (isAnyModalOpen()) {
+      return;
+    }
+
+    if (event.code === "Space" || event.code === "ArrowUp" || event.code === "KeyW") {
+      event.preventDefault();
+      playBgm();
+      input.jumpHeld = true;
+      jump();
+    } else if (event.code === "ArrowDown" || event.code === "KeyS") {
+      event.preventDefault();
+      playBgm();
+      setDuck(true);
+    }
+  });
+
+  window.addEventListener("keyup", function (event) {
+    if (state === "gameover" || state === "paused" || state === "countdown") {
+      return;
+    }
+    if (isAnyModalOpen()) {
+      return;
+    }
+
+    if (event.code === "Space" || event.code === "ArrowUp" || event.code === "KeyW") {
+      event.preventDefault();
+      input.jumpHeld = false;
+      player.jumpHold = 0;
+    } else if (event.code === "ArrowDown" || event.code === "KeyS") {
+      event.preventDefault();
+      setDuck(false);
+    }
+  });
+
+  // 移动端通过按钮操作，取消画布点击跳跃
+
+  function pressJumpButton(event) {
+    if (jumpButton.classList.contains("disabled")) {
+      event.preventDefault();
+      showToast("游戏已结束，为防止误触，请点击重来按钮重新开始");
+      return;
+    }
+    if (state === "paused" || state === "countdown") {
+      event.preventDefault();
+      return;
+    }
+    if (isAnyModalOpen()) {
+      return;
+    }
+
+    event.preventDefault();
+    playBgm();
+    input.jumpHeld = true;
+    jump();
+  }
+
+  function releaseJumpButton(event) {
+    if (jumpButton.classList.contains("disabled")) {
+      event.preventDefault();
+      return;
+    }
+    if (state === "paused" || state === "countdown") {
+      event.preventDefault();
+      return;
+    }
+    event.preventDefault();
+    input.jumpHeld = false;
+    player.jumpHold = 0;
+  }
+
+  function pressDuckButton(event) {
+    if (duckButton.classList.contains("disabled")) {
+      event.preventDefault();
+      showToast("游戏已结束，为防止误触，请点击重来按钮重新开始");
+      return;
+    }
+    if (state === "paused" || state === "countdown") {
+      event.preventDefault();
+      return;
+    }
+    if (isAnyModalOpen()) {
+      return;
+    }
+
+    event.preventDefault();
+    playBgm();
+    setDuck(true);
+  }
+
+  function releaseDuckButton(event) {
+    if (duckButton.classList.contains("disabled")) {
+      event.preventDefault();
+      return;
+    }
+    if (state === "paused" || state === "countdown") {
+      event.preventDefault();
+      return;
+    }
+    event.preventDefault();
+    setDuck(false);
+  }
+
+  jumpButton.addEventListener("pointerdown", pressJumpButton);
+  jumpButton.addEventListener("pointerup", releaseJumpButton);
+  jumpButton.addEventListener("pointerleave", releaseJumpButton);
+  jumpButton.addEventListener("pointercancel", releaseJumpButton);
+  duckButton.addEventListener("pointerdown", pressDuckButton);
+  duckButton.addEventListener("pointerup", releaseDuckButton);
+  duckButton.addEventListener("pointerleave", releaseDuckButton);
+  duckButton.addEventListener("pointercancel", releaseDuckButton);
+
+  startButton.addEventListener("click", function () {
+    if (isAnyModalOpen()) {
+      return;
+    }
+
+    playBgm();
+    startGame();
+  });
+
+  if (homeButton) {
+    homeButton.addEventListener("click", function () {
+      window.location.href = 'seiarunner://home';
+    });
+  }
+
+  if (rankBtn) {
+    rankBtn.addEventListener("click", function () {
+      sessionStorage.setItem("seia-return-score", String(game.score));
+      sessionStorage.setItem("seia-return-best", String(bestScore));
+    });
+  }
+
+  pauseBtn.addEventListener("click", function (event) {
+    event.stopPropagation();
+    togglePause();
+  });
+
+  var titleClicks = 0;
+  var cheatModal = document.getElementById("cheatModal");
+  var cheatInput = document.getElementById("cheatInput");
+  var cheatSubmit = document.getElementById("cheatSubmit");
+  var cheatCancel = document.getElementById("cheatCancel");
+  var titleEl = document.querySelector(".hud strong");
+
+  titleEl.style.cursor = "pointer";
+
+  titleEl.addEventListener("click", function () {
+    titleClicks += 1;
+
+    if (titleClicks >= 7 && !game.invincible) {
+      titleClicks = 0;
+      cheatModal.classList.remove("hidden");
+      cheatInput.value = "";
+      cheatInput.focus();
+    }
+  });
+
+  function closeCheatModal() {
+    cheatModal.classList.add("hidden");
+  }
+
+  var cheatCodes = [];
+
+  fetch("api/cheat_code.txt")
+    .then(function (res) { return res.text(); })
+    .then(function (text) {
+      var lines = text.split("\n");
+      lines.forEach(function (line) {
+        var code = line.trim().toUpperCase();
+        if (code !== "") {
+          cheatCodes.push(code);
+        }
+      });
+    })
+    .catch(function () {});
+
+  cheatSubmit.addEventListener("click", function () {
+    var inputCode = cheatInput.value.trim().toUpperCase();
+
+    if (inputCode !== "" && cheatCodes.indexOf(inputCode) !== -1) {
+      game.invincible = true;
+      closeCheatModal();
+      cheatSound.currentTime = 0;
+      cheatSound.play().catch(function () {});
+      showToast("作弊成功！");
+    } else {
+      document.getElementById("cheatError").classList.remove("hidden");
+    }
+  });
+
+  cheatCancel.addEventListener("click", closeCheatModal);
+
+  cheatInput.addEventListener("keydown", function (event) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      cheatSubmit.click();
+    } else if (event.key === "Escape") {
+      closeCheatModal();
+    }
+  });
+
+  cheatInput.addEventListener("input", function () {
+    document.getElementById("cheatError").classList.add("hidden");
+  });
+
+  // 成绩上传相关
+  var uploadScoreBtn = document.getElementById("uploadScoreBtn");
+  var submitModal = document.getElementById("submitModal");
+  var submitNickname = document.getElementById("submitNickname");
+  var submitMessage = document.getElementById("submitMessage");
+  var submitError = document.getElementById("submitError");
+  var submitScoreVal = document.getElementById("submitScoreVal");
+  var submitConfirm = document.getElementById("submitConfirm");
+  var submitCancel = document.getElementById("submitCancel");
+  var geetestCaptchaContainer = document.getElementById("geetestCaptchaContainer");
+  var captchaObj = null;
+  var captchaInitInProgress = false;
+  var ipInfo = null;
+  var nicknameMaxLength = 12;
+  var messageMaxLength = 30;
+
+  // 页面加载时获取字数限制
+  fetch("api/get_limits.php", { cache: "no-store" })
+    .then(function (res) { return res.json(); })
+    .then(function (data) {
+      if (data.code === 0 && data.data) {
+        nicknameMaxLength = data.data.nickname_max_length || 12;
+        messageMaxLength = data.data.message_max_length || 30;
+        submitNickname.setAttribute("maxlength", nicknameMaxLength);
+        submitNickname.setAttribute("placeholder", "昵称（最多" + nicknameMaxLength + "个字）");
+        submitMessage.setAttribute("maxlength", messageMaxLength);
+        submitMessage.setAttribute("placeholder", "留言（最多" + messageMaxLength + "个字，可选）");
+      }
+    })
+    .catch(function () {
+      // 获取失败则使用默认值
+    });
+
+  // 页面加载时获取 IP 归属地信息
+  fetch("https://game.xcnahida.cn/api/v1/ip")
+    .then(function (res) { return res.json(); })
+    .then(function (data) {
+      if (data.code === 0 && data.data) {
+        ipInfo = data;
+      }
+    })
+    .catch(function () {
+      // 获取失败则忽略，上传时 IP 和归属地为空
+    });
+
+  function getUserFingerprint() {
+    var comps = [];
+    comps.push(navigator.userAgent || "");
+    comps.push(navigator.language || "");
+    comps.push(screen.width + "x" + screen.height);
+    comps.push(screen.colorDepth);
+    comps.push(new Date().getTimezoneOffset());
+    comps.push(!!navigator.cookieEnabled);
+    comps.push(navigator.platform || "");
+    comps.push(navigator.hardwareConcurrency || 0);
+    if (navigator.deviceMemory) { comps.push(navigator.deviceMemory); }
+    var raw = comps.join("|");
+    return simpleHash(raw);
+  }
+
+  function simpleHash(str) {
+    var hash = 0;
+    for (var i = 0; i < str.length; i++) {
+      var ch = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + ch;
+      hash = hash | 0;
+    }
+    return Math.abs(hash).toString(16);
+  }
+
+  function sha256(str) {
+    function rotr(x, n) { return (x >>> n) | (x << (32 - n)); }
+    var K = [0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+             0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+             0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+             0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+             0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+             0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+             0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+             0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2];
+    var H0 = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+    var bytes = [];
+    for (var i = 0; i < str.length; i++) { bytes.push(str.charCodeAt(i) & 0xff); }
+    var bitLen = bytes.length * 8;
+    bytes.push(0x80);
+    while ((bytes.length % 64) !== 56) { bytes.push(0); }
+    for (var j = 0; j < 8; j++) { bytes.push((bitLen / Math.pow(2, 56 - j * 8)) & 0xff); }
+    for (var bi = 0; bi < bytes.length; bi += 64) {
+      var W = new Array(64);
+      for (var t = 0; t < 16; t++) { W[t] = (bytes[bi + t * 4] << 24) | (bytes[bi + t * 4 + 1] << 16) | (bytes[bi + t * 4 + 2] << 8) | bytes[bi + t * 4 + 3]; }
+      for (t = 16; t < 64; t++) { var s0 = rotr(W[t - 15], 7) ^ rotr(W[t - 15], 18) ^ (W[t - 15] >>> 3); var s1 = rotr(W[t - 2], 17) ^ rotr(W[t - 2], 19) ^ (W[t - 2] >>> 10); W[t] = (W[t - 16] + s0 + W[t - 7] + s1) | 0; }
+      var a = H0[0], b = H0[1], c = H0[2], d = H0[3], e = H0[4], f = H0[5], g = H0[6], h = H0[7];
+      for (t = 0; t < 64; t++) {
+        var S1 = rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25);
+        var ch = (e & f) ^ ((~e) & g);
+        var temp1 = (h + S1 + ch + K[t] + W[t]) | 0;
+        var S0 = rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22);
+        var maj = (a & b) ^ (a & c) ^ (b & c);
+        var temp2 = (S0 + maj) | 0;
+        h = g; g = f; f = e; e = (d + temp1) | 0; d = c; c = b; b = a; a = (temp1 + temp2) | 0;
+      }
+      H0[0] = (H0[0] + a) | 0; H0[1] = (H0[1] + b) | 0; H0[2] = (H0[2] + c) | 0; H0[3] = (H0[3] + d) | 0;
+      H0[4] = (H0[4] + e) | 0; H0[5] = (H0[5] + f) | 0; H0[6] = (H0[6] + g) | 0; H0[7] = (H0[7] + h) | 0;
+    }
+    var hex = '';
+    for (var k = 0; k < 8; k++) { var word = H0[k] >>> 0; hex += ('00000000' + word.toString(16)).slice(-8); }
+    return hex;
+  }
+
+  function getUserDevice() {
+    var ua = navigator.userAgent;
+    if (/Windows/i.test(ua)) return "Windows";
+    if (/Mac/i.test(ua)) return "Mac";
+    if (/Android/i.test(ua)) return "Android";
+    if (/iPhone|iPad|iPod/i.test(ua)) return "iOS";
+    if (/Linux/i.test(ua)) return "Linux";
+    return "Unknown";
+  }
+
+  function openSubmitModal() {
+    if (isCheatModalOpen()) return;
+
+    if (game.invincible) {
+      showToast("作弊模式下无法上传成绩");
+      return;
+    }
+
+    if (game.score === 0) {
+      showToast("没有成绩数据，请先开始游戏！");
+      return;
+    }
+
+    submitScoreVal.textContent = game.score;
+    submitNickname.value = localStorage.getItem("seia-runner-nick") || "";
+    submitMessage.value = localStorage.getItem("seia-runner-msg") || "";
+    submitError.classList.add("hidden");
+    submitModal.classList.remove("hidden");
+    submitNickname.focus();
+
+    // 初始化极验验证码
+    initGeetestCaptcha();
+  }
+
+  function initGeetestCaptcha() {
+    if (captchaInitInProgress) return;
+    captchaInitInProgress = true;
+
+    // 清除旧的验证码
+    geetestCaptchaContainer.innerHTML = '<p id="geetestWait" style="color:#999;font-size:14px;margin:0;">正在加载验证码...</p>';
+
+    fetch("api/captcha/geetest_register.php?t=" + Date.now(), {
+      method: "GET",
+      cache: "no-store"
+    })
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        geetestCaptchaContainer.innerHTML = "";
+        if (typeof initGeetest4 !== "function") {
+          geetestCaptchaContainer.innerHTML = '<p style="color:#c0392b;font-size:14px;margin:0;">验证码组件加载失败(gt4.js未加载)，请检查网络后刷新页面重试</p>';
+          captchaInitInProgress = false;
+          return;
+        }
+        if (!data || data.code !== 0 || !data.data || !data.data.captcha_id) {
+          var errMsg = data && data.message ? data.message : '未知错误';
+          geetestCaptchaContainer.innerHTML = '<p style="color:#c0392b;font-size:14px;margin:0;">验证码服务错误: ' + errMsg + '</p>';
+          captchaInitInProgress = false;
+          return;
+        }
+        initGeetest4({
+          captchaId: data.data.captcha_id,
+          product: "float",
+          width: "100%",
+          https: true,
+          onError: function (e) {
+            geetestCaptchaContainer.innerHTML = '<p style="color:#c0392b;font-size:14px;margin:0;">验证码加载失败(' + (e.code || '') + ')，请检查网络后重试</p>';
+            captchaInitInProgress = false;
+          }
+        }, function (captcha) {
+          captchaObj = captcha;
+          captcha.appendTo("#geetestCaptchaContainer");
+          captcha.onReady(function () {
+            captchaInitInProgress = false;
+          });
+        });
+      })
+      .catch(function (err) {
+        var detail = err && err.message ? err.message : '网络不可达';
+        geetestCaptchaContainer.innerHTML = '<p style="color:#c0392b;font-size:14px;margin:0;">无法连接验证码服务(' + detail + ')，请检查网络</p>';
+        captchaInitInProgress = false;
+      });
+  }
+
+  function destroyGeetestCaptcha() {
+    if (captchaObj && typeof captchaObj.reset === "function") {
+      captchaObj.reset();
+    }
+    captchaObj = null;
+    geetestCaptchaContainer.innerHTML = "";
+  }
+
+  function closeSubmitModal() {
+    submitModal.classList.add("hidden");
+    destroyGeetestCaptcha();
+  }
+
+  var toastEl = document.getElementById("toast");
+  var toastTimer = 0;
+
+  function showToast(msg) {
+    clearTimeout(toastTimer);
+    toastEl.textContent = msg;
+    toastEl.classList.remove("hidden");
+    toastTimer = setTimeout(function () {
+      toastEl.classList.add("hidden");
+    }, 2500);
+  }
+
+  var serverErrorModal = document.getElementById("serverErrorModal");
+  var serverErrorFrame = document.getElementById("serverErrorFrame");
+  var serverErrorClose = document.getElementById("serverErrorClose");
+
+  serverErrorClose.addEventListener("click", function () {
+    serverErrorModal.classList.add("hidden");
+    serverErrorFrame.srcdoc = "";
+  });
+
+  serverErrorModal.addEventListener("click", function (e) {
+    if (e.target === serverErrorModal) {
+      serverErrorModal.classList.add("hidden");
+      serverErrorFrame.srcdoc = "";
+    }
+  });
+
+  function showServerError(html) {
+    serverErrorFrame.srcdoc = html;
+    serverErrorModal.classList.remove("hidden");
+  }
+
+  var censorModal = document.getElementById("censorModal");
+  var censorMessage = document.getElementById("censorMessage");
+  var censorClose = document.getElementById("censorClose");
+
+  censorClose.addEventListener("click", function () {
+    censorModal.classList.add("hidden");
+  });
+
+  censorModal.addEventListener("click", function (e) {
+    if (e.target === censorModal) {
+      censorModal.classList.add("hidden");
+    }
+  });
+
+  function showCensorModal(msg) {
+    censorMessage.textContent = msg;
+    censorModal.classList.remove("hidden");
+  }
+
+  function parseResponse(res) {
+    if (res.status === 403) {
+      var contentType = res.headers.get("Content-Type") || "";
+      if (contentType.indexOf("text/html") !== -1) {
+        return res.text().then(function (html) {
+          showServerError(html);
+          throw new Error("server 403 html response");
+        });
+      }
+    }
+    return res.json();
+  }
+
+  uploadScoreBtn.addEventListener("click", function () {
+    if (isAnyModalOpen()) return;
+    openSubmitModal();
+  });
+
+  submitCancel.addEventListener("click", function () {
+    closeSubmitModal();
+  });
+
+  submitConfirm.addEventListener("click", function () {
+    var nickname = submitNickname.value.trim();
+    var message = submitMessage.value.trim();
+
+    if (nickname === "") {
+      submitError.textContent = "请输入昵称";
+      submitError.classList.remove("hidden");
+      return;
+    }
+
+    if (nickname.length > nicknameMaxLength) {
+      submitError.textContent = "昵称不能超过" + nicknameMaxLength + "个字";
+      submitError.classList.remove("hidden");
+      return;
+    }
+
+    if (message.length > messageMaxLength) {
+      submitError.textContent = "留言不能超过" + messageMaxLength + "个字";
+      submitError.classList.remove("hidden");
+      return;
+    }
+
+    submitConfirm.disabled = true;
+    submitConfirm.textContent = "提交中...";
+    submitError.classList.add("hidden");
+
+    // 检查验证码是否已完成
+    if (!captchaObj || typeof captchaObj.getValidate !== "function") {
+      submitError.textContent = "请先完成验证码验证";
+      submitError.classList.remove("hidden");
+      submitConfirm.disabled = false;
+      submitConfirm.textContent = "提交";
+      return;
+    }
+    var captchaResult = captchaObj.getValidate();
+    if (!captchaResult) {
+      submitError.textContent = "请先完成验证码验证";
+      submitError.classList.remove("hidden");
+      submitConfirm.disabled = false;
+      submitConfirm.textContent = "提交";
+      return;
+    }
+
+    var formData = new URLSearchParams();
+    formData.append("nickname", nickname);
+    formData.append("message", message);
+    formData.append("score", String(game.score));
+    formData.append("ip_addr", ipInfo ? ipInfo.data.addr || "" : "");
+    formData.append("device", getUserDevice());
+    formData.append("fingerprint", getUserFingerprint());
+    formData.append("lot_number", captchaResult.lot_number);
+    formData.append("captcha_output", captchaResult.captcha_output);
+    formData.append("pass_token", captchaResult.pass_token);
+    formData.append("gen_time", captchaResult.gen_time);
+
+    if (ipInfo && ipInfo.data) {
+      var locParts = [];
+      if (ipInfo.data.country) locParts.push(ipInfo.data.country);
+      if (ipInfo.data.province) locParts.push(ipInfo.data.province);
+      formData.append("location", locParts.join("·"));
+    } else {
+      formData.append("location", "");
+    }
+
+    fetch("api/score_nonce.php", {
+      method: "GET",
+      cache: "no-store",
+      credentials: "same-origin"
+    })
+      .then(parseResponse)
+      .then(function (nonceData) {
+        if (nonceData.code !== 0 || !nonceData.data || !nonceData.data.nonce) {
+          throw new Error("invalid score nonce");
+        }
+
+        formData.append("score_nonce", nonceData.data.nonce);
+
+        var checksumInput = game.score + "|" + nonceData.data.nonce + "|" + nonceData.data.token + "|" + getUserFingerprint();
+        var checksumPromise;
+        if (typeof crypto !== 'undefined' && crypto.subtle && typeof crypto.subtle.digest === 'function') {
+          var encoder = new TextEncoder();
+          checksumPromise = crypto.subtle.digest("SHA-256", encoder.encode(checksumInput)).then(function (hashBuf) {
+            var hashArr = Array.from(new Uint8Array(hashBuf));
+            return hashArr.map(function (b) { return b.toString(16).padStart(2, "0"); }).join("");
+          });
+        } else {
+          checksumPromise = Promise.resolve(sha256(checksumInput));
+        }
+        return checksumPromise.then(function (checksum) {
+          formData.append("checksum", checksum);
+
+          return fetch("api/submit_score.php", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"
+            },
+            body: formData.toString()
+          });
+        });
+      })
+      .then(parseResponse)
+      .then(function (data) {
+        submitConfirm.disabled = false;
+        submitConfirm.textContent = "提交";
+
+        if (data.code === 0) {
+          localStorage.setItem("seia-runner-nick", nickname);
+          localStorage.setItem("seia-runner-msg", message);
+          closeSubmitModal();
+          if (data.data.updated) {
+            showToast("成绩已更新！提高了 " + data.data.improved + " 分，当前排名第 " + data.data.rank + " 名");
+          } else if (data.data.oldScore) {
+            showToast(data.message);
+          } else {
+            showToast("上传成功！当前排名第 " + data.data.rank + " 名");
+          }
+        } else {
+          if (data.message && data.message.indexOf("您的输入存在敏感词") !== -1) {
+            submitConfirm.disabled = false;
+            submitConfirm.textContent = "提交";
+            showCensorModal(data.message);
+          } else {
+            submitError.textContent = "提交成绩失败：" + (data.message || "未知错误");
+            submitError.classList.remove("hidden");
+          }
+        }
+      })
+      .catch(function (err) {
+        submitConfirm.disabled = false;
+        submitConfirm.textContent = "提交";
+        if (err.message !== "server 403 html response") {
+          submitError.textContent = "提交成绩失败：数据库出错，请稍后重试";
+          submitError.classList.remove("hidden");
+        }
+      });
+  });
+
+  // 提交弹窗内按 Enter / Esc 处理
+  submitNickname.addEventListener("keydown", function (event) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      submitMessage.focus();
+    } else if (event.key === "Escape") {
+      closeSubmitModal();
+    }
+  });
+  submitMessage.addEventListener("keydown", function (event) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      submitConfirm.click();
+    } else if (event.key === "Escape") {
+      closeSubmitModal();
+    }
+  });
+
+  updateScore();
+  loadAssets();
+
+  var returnScore = sessionStorage.getItem("seia-return-score");
+  if (returnScore !== null) {
+    sessionStorage.removeItem("seia-return-score");
+    sessionStorage.removeItem("seia-return-best");
+    window._returningFromLeaderboard = true;
+    var checkReturn = setInterval(function () {
+      if (loadedCount === assetKeys.length) {
+        clearInterval(checkReturn);
+        game.score = Number(returnScore);
+        var savedBest = sessionStorage.getItem("seia-return-best");
+        if (savedBest !== null) {
+          bestScore = Number(savedBest);
+        }
+        bestScore = Math.max(bestScore, game.score);
+        localStorage.setItem("seia-runner-best", String(bestScore));
+        updateScore();
+        window._returningFromLeaderboard = false;
+        endGame();
+      }
+    }, 100);
+  }
+
+  // 碰撞箱调试函数
+  window.toggleHitboxes = function () {
+    showHitboxes = !showHitboxes;
+    console.log("碰撞箱显示: " + (showHitboxes ? "ON" : "OFF"));
+  };
+}());
