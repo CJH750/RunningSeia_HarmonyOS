@@ -34,17 +34,22 @@ function normalizePageSize(pageSize) {
 }
 
 function parseResponse(res) {
-    if (res.status === 403) {
-        var contentType = res.headers.get("Content-Type") || "";
-        if (contentType.indexOf("text/html") !== -1) {
-            return res.text().then(function (html) {
-                showServerError(html);
-                throw new Error("server 403 html response");
-            });
+    var contentType = res.headers.get("Content-Type") || "";
+    var isHtml = contentType.indexOf("text/html") !== -1;
+    if (!res.ok || isHtml) {
+      return res.text().then(function (text) {
+        if (isHtml) {
+          showServerError(text);
         }
+        throw new Error("server error " + res.status);
+      });
     }
-    return res.json();
-}
+    return res.json().catch(function () {
+      return res.text().then(function (text) {
+        throw new Error("invalid json response");
+      });
+    });
+  }
 
 var serverErrorModal = document.getElementById("serverErrorModal");
 var serverErrorFrame = document.getElementById("serverErrorFrame");

@@ -24,6 +24,7 @@ struct Index {
         .fileAccess(true)
         .mixedMode(MixedMode.All)
         .zoomAccess(false)
+        .userAgent('Mozilla/5.0 (HarmonyOS 5.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.210 Mobile Safari/537.36')
         .width('100%')
         .height('100%')
         .onPageEnd(() => {
@@ -34,7 +35,7 @@ struct Index {
         .onLoadIntercept((event) => {
           if (event) {
             const url: string = event.data.getRequestUrl();
-            if (url.indexOf('seiarunner://home') === 0) {
+            if (url.indexOf('runningseia://home') === 0) {
               router.back();
               return true;
             }

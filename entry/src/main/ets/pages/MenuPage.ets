@@ -111,7 +111,7 @@ struct HelpDialog {
             .fontColor('#1b2f25')
             .margin({ bottom: 4 });
 
-          Text('本项目已经开源在 GitHub 上，\nGitHub地址：https://github.com/13353462488/RunningSeia_HarmonyOS/')
+          Text('本项目已经开源在 GitHub 上，\nGitHub地址：https://github.com/CJH750/RunningSeia_HarmonyOS/')
             .fontSize(14)
             .fontColor('#3a403a')
             .margin({ bottom: 4 });

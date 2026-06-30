@@ -5,13 +5,13 @@
         "name": "default",
         "type": "HarmonyOS",
         "material": {
-          "certpath": "C:\\Users\\Thinkpad\\.ohos\\config\\default_SeiaRunner_Ih_z70iX0OQRzC4Ff4dIF9tnmgfk8bVtW6fDOAr4X8o=.cer",
+          "certpath": "C:\\Users\\Thinkpad\\.ohos\\config\\default_RunningSeia_ijyxyx2zl7Oq1-UOA9VBAt5qlQNY8vFihpWBm2LvepU=.cer",
           "keyAlias": "debugKey",
-          "keyPassword": "0000001B06B98772365ABE33B2EC56C652EA71E7610ADA4D6FC5694A58FF979DE0BF006DEB85640321D15C",
-          "profile": "C:\\Users\\Thinkpad\\.ohos\\config\\default_SeiaRunner_Ih_z70iX0OQRzC4Ff4dIF9tnmgfk8bVtW6fDOAr4X8o=.p7b",
+          "keyPassword": "0000001B1FA61CEA6C39A1434C997666DB57BD9B17B01A565B28D0B88B4C81D2732779737AD2ED13E2FEE9",
+          "profile": "C:\\Users\\Thinkpad\\.ohos\\config\\default_RunningSeia_ijyxyx2zl7Oq1-UOA9VBAt5qlQNY8vFihpWBm2LvepU=.p7b",
           "signAlg": "SHA256withECDSA",
-          "storeFile": "C:\\Users\\Thinkpad\\.ohos\\config\\default_SeiaRunner_Ih_z70iX0OQRzC4Ff4dIF9tnmgfk8bVtW6fDOAr4X8o=.p12",
-          "storePassword": "0000001B0CBBF749C5EE284FDA820679ECC2AE62CBCE4014473DB4BE5A114FC921DD6F56ACD6BF6B7C2398"
+          "storeFile": "C:\\Users\\Thinkpad\\.ohos\\config\\default_RunningSeia_ijyxyx2zl7Oq1-UOA9VBAt5qlQNY8vFihpWBm2LvepU=.p12",
+          "storePassword": "0000001BC0D2A4912D27C1197052605D08C3B78DC3C13903A01DEED429C8351D988E97632C1FCD189594DE"
         }
       }
     ],

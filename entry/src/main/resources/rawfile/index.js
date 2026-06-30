@@ -942,7 +942,7 @@
 
   if (homeButton) {
     homeButton.addEventListener("click", function () {
-      window.location.href = 'seiarunner://home';
+      window.location.href = 'runningseia://home';
     });
   }
 
@@ -1044,7 +1044,7 @@
 
   // 页面加载时获取字数限制
   fetch("api/get_limits.php", { cache: "no-store" })
-    .then(function (res) { return res.json(); })
+    .then(parseResponse)
     .then(function (data) {
       if (data.code === 0 && data.data) {
         nicknameMaxLength = data.data.nickname_max_length || 12;
@@ -1061,7 +1061,7 @@
 
   // 页面加载时获取 IP 归属地信息
   fetch("https://game.xcnahida.cn/api/v1/ip")
-    .then(function (res) { return res.json(); })
+    .then(parseResponse)
     .then(function (data) {
       if (data.code === 0 && data.data) {
         ipInfo = data;
@@ -1137,6 +1137,7 @@
 
   function getUserDevice() {
     var ua = navigator.userAgent;
+    if (/HarmonyOS/i.test(ua)) return "HarmonyOS";
     if (/Windows/i.test(ua)) return "Windows";
     if (/Mac/i.test(ua)) return "Mac";
     if (/Android/i.test(ua)) return "Android";
@@ -1180,7 +1181,7 @@
       method: "GET",
       cache: "no-store"
     })
-      .then(function (res) { return res.json(); })
+      .then(parseResponse)
       .then(function (data) {
         geetestCaptchaContainer.innerHTML = "";
         if (typeof initGeetest4 !== "function") {
@@ -1284,16 +1285,21 @@
   }
 
   function parseResponse(res) {
-    if (res.status === 403) {
-      var contentType = res.headers.get("Content-Type") || "";
-      if (contentType.indexOf("text/html") !== -1) {
-        return res.text().then(function (html) {
-          showServerError(html);
-          throw new Error("server 403 html response");
-        });
-      }
+    var contentType = res.headers.get("Content-Type") || "";
+    var isHtml = contentType.indexOf("text/html") !== -1;
+    if (!res.ok || isHtml) {
+      return res.text().then(function (text) {
+        if (isHtml) {
+          showServerError(text);
+        }
+        throw new Error("server error " + res.status);
+      });
     }
-    return res.json();
+    return res.json().catch(function () {
+      return res.text().then(function (text) {
+        throw new Error("invalid json response");
+      });
+    });
   }
 
   uploadScoreBtn.addEventListener("click", function () {
