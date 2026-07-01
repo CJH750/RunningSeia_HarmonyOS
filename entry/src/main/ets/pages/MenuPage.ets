@@ -233,7 +233,7 @@ struct MenuPage {
             j += '#rankBtn{position:fixed;top:4px;right:56px;z-index:200;font-size:12px;padding:2px 10px;background:rgba(0,0,0,0.4);color:#fff;border-radius:4px;text-decoration:none}';
             j += '#pauseBtn{position:fixed;top:4px;right:8px;z-index:200;width:36px;height:36px;min-width:36px;padding:0;background:rgba(0,0,0,0.4);border:none;border-radius:4px;display:flex;align-items:center;justify-content:center}';
             j += '#pauseBtn svg{fill:#fff!important}#pauseBtn.hidden{display:none!important}';
-            j += '#game{max-width:100%!important;max-height:100%!important;z-index:10}';
+            j += '#game{max-width:100%!important;max-height:100%!important;z-index:10;pointer-events:none!important}';
             j += '#jumpButton,#duckButton{position:fixed!important;bottom:10px!important;width:120px!important;height:84px!important;border-radius:12px!important;font-size:18px!important;font-weight:bold!important;border:none!important;z-index:200!important;display:flex!important;align-items:center!important;justify-content:center!important;pointer-events:auto!important}';
             j += '#jumpButton{left:12px!important;background:rgba(31,111,74,0.65)!important;color:#fff!important}';
             j += '#duckButton{right:12px!important;background:rgba(90,74,122,0.65)!important;color:#fff!important}';
