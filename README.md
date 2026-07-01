@@ -12,22 +12,26 @@
 - 🏃 横版跑酷玩法：跳跃躲避巧乐兹，下蹲躲避雪碧瓶
 - 🎵 多首 BGM 可选，支持静音模式
 - 🏆 成绩上传 + 极验验证码防刷
-- 📊 日/周/月/总排行榜
+- 📊 日/周/月/总排行榜（iframe 嵌入 + AJAX 秒切）
 - 💬 成绩留言、归属地显示
-- 🎮 支持键盘（W/S/空格）和触摸操作
-- 🛡 API 请求健壮的错误处理（WAF/非 JSON 响应不回崩溃）
+- 🎮 触摸操作（跳跃左下 + 下蹲右下，半透明悬浮按钮）
 
 ## 技术架构
 
 | 层 | 技术 |
 |----|------|
 | 原生 UI | ArkTS + ArkUI |
-| 游戏渲染 | Canvas (WebView 内嵌) |
-| 网络代理 | WebView 资源拦截 + 本地资源替换 |
-| 验证码 | 极验 v4 SDK |
-| 包名 | com.example.runningseia |
+| 游戏渲染 | WebView 直接加载原网页 |
+| UI 定制 | 页面加载后 CSS 注入（按钮布局、画布居中） |
+| 排行榜 | iframe 嵌入 + AJAX 无刷新切榜 |
+| 验证码 | 极验 v4（原网页侧） |
+| 请求头 | 无自定义头，直接同源访问 |
 
-游戏核心逻辑运行在 WebView 中，通过资源拦截实现本地秒加载 + 远程 API 同源访问。
+与早期版本的差异：
+- ~~资源拦截 + 本地文件替换~~ → 直接加载原网页，通过 CSS 注入定制 UI
+- ~~自定义 X-Client-Id 请求头~~ → 移除，API 无需额外认证
+- 排行榜使用 iframe 嵌入，切榜秒切，返回游戏瞬间
+- 启动加载遮罩 + CSS 注入完毕自动消失
 
 ## 构建
 
@@ -37,7 +41,7 @@
    git clone https://github.com/CJH750/RunningSeia_HarmonyOS.git
    ```
 3. 用 DevEco Studio 打开项目
-4. 在 `File → Project Structure → Signing Configs` 中配置签名
+4. 在 `File → Project Structure → Signing Configs` 中配置签名（建议使用自动签名）
 5. 点击 `Build → Build HAP(s)` 构建
 
 ## 致谢

@@ -7,11 +7,11 @@
         "material": {
           "certpath": "C:\\Users\\Thinkpad\\.ohos\\config\\default_RunningSeia_ijyxyx2zl7Oq1-UOA9VBAt5qlQNY8vFihpWBm2LvepU=.cer",
           "keyAlias": "debugKey",
-          "keyPassword": "0000001B1FA61CEA6C39A1434C997666DB57BD9B17B01A565B28D0B88B4C81D2732779737AD2ED13E2FEE9",
+          "keyPassword": "0000001AF6667B9A62972C318594729BED6C5E3674859E46F84B8D84692D790CE6905501CC8F80C3F658",
           "profile": "C:\\Users\\Thinkpad\\.ohos\\config\\default_RunningSeia_ijyxyx2zl7Oq1-UOA9VBAt5qlQNY8vFihpWBm2LvepU=.p7b",
           "signAlg": "SHA256withECDSA",
           "storeFile": "C:\\Users\\Thinkpad\\.ohos\\config\\default_RunningSeia_ijyxyx2zl7Oq1-UOA9VBAt5qlQNY8vFihpWBm2LvepU=.p12",
-          "storePassword": "0000001BC0D2A4912D27C1197052605D08C3B78DC3C13903A01DEED429C8351D988E97632C1FCD189594DE"
+          "storePassword": "0000001A71730684D5C95978CAD4CA37D4041302E2C14D64789E670AC78C37EA1CC6ED3DEE9473F9235E"
         }
       }
     ],

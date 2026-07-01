@@ -1041,7 +1041,6 @@
   var ipInfo = null;
   var nicknameMaxLength = 12;
   var messageMaxLength = 30;
-
   // 页面加载时获取字数限制
   fetch("api/get_limits.php", { cache: "no-store" })
     .then(parseResponse)
